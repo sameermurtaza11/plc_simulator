@@ -1,0 +1,228 @@
+# test_small.db — hand-written EPICS database for verifying the Channel Access adapter.
+#
+# Purpose: a SMALL set of records, each chosen to exercise one thing the monitoring
+# application has to handle (limits, severities, binary/enum alarms, invalid data,
+# scan rates, deadbands). Values move by themselves; nothing here needs caput.
+#
+# Load:   softIoc -m "P=SIM:" -d test_small.db        (see ../README.md)
+# Macros: P          PV name prefix, e.g. SIM:
+#         TICK_SCAN  scan of the shared counter (default "1 second")
+#
+# IMPORTANT: this file describes the TEST IOC only. Production record types, PV names and
+# fields are unverified (see docs/v2/01-v2-audit-and-design.md in PLC_Monitoring).
+# The monitoring application is strictly read-only; any caput in the test plan is done
+# by the tester ON THE IOC SIDE, never by the application.
+
+# ---------------------------------------------------------------------------
+# Shared counter: 0, 6, 12 ... 354, 0 ...  (one revolution = 60 ticks).
+# All waveforms are functions of it, so every record moves on its own.
+# ---------------------------------------------------------------------------
+record(calc, "$(P)tick") {
+    field(DESC, "shared test counter, degrees")
+    field(SCAN, "$(TICK_SCAN=1 second)")
+    field(INPA, "$(P)tick.VAL")
+    field(CALC, "(A>=354)?0:A+6")
+}
+
+# ---------------------------------------------------------------------------
+# Analog, all four limits, MAJOR at the outer limits and MINOR at the inner ones.
+# value = 50 + 40*sin(tick)  -> sweeps 10..90, so it crosses LOW/HIGH/LOLO/HIHI.
+# ---------------------------------------------------------------------------
+record(calc, "$(P)ai:full") {
+    field(DESC, "analog with all limits")
+    field(SCAN, "1 second")
+    field(INPA, "$(P)tick NPP")
+    field(CALC, "50+40*SIN(A*PI/180)")
+    field(EGU,  "degC")
+    field(PREC, "2")
+    field(HOPR, "100")
+    field(LOPR, "0")
+    field(HIHI, "85")
+    field(HIGH, "75")
+    field(LOW,  "25")
+    field(LOLO, "15")
+    field(HHSV, "MAJOR")
+    field(HSV,  "MINOR")
+    field(LSV,  "MINOR")
+    field(LLSV, "MAJOR")
+    field(HYST, "2")
+}
+
+# Same wave, but only HIGH is set (checks that missing limits are reported as unsupported/disabled,
+# not as 0).
+record(calc, "$(P)ai:highonly") {
+    field(DESC, "analog with HIGH only")
+    field(SCAN, "1 second")
+    field(INPA, "$(P)tick NPP")
+    field(CALC, "5+4*SIN(A*PI/180)")
+    field(EGU,  "bar")
+    field(PREC, "3")
+    field(HOPR, "10")
+    field(LOPR, "0")
+    field(HIGH, "8")
+    field(HSV,  "MAJOR")
+}
+
+# No alarm limits at all.
+record(calc, "$(P)ai:nolimits") {
+    field(DESC, "analog without limits")
+    field(SCAN, "1 second")
+    field(INPA, "$(P)tick NPP")
+    field(CALC, "1000+500*SIN(A*PI/180)")
+    field(EGU,  "kW")
+    field(PREC, "1")
+    field(HOPR, "2000")
+    field(LOPR, "0")
+}
+
+# Fast scan (0.1 s), monitor deadband: only changes of >= 1.0 are posted to monitors.
+record(calc, "$(P)ai:fast_mdel") {
+    field(DESC, "fast scan, MDEL=1")
+    field(SCAN, ".1 second")
+    field(INPA, "$(P)tick NPP")
+    field(CALC, "50+50*SIN(A*PI/180)")
+    field(EGU,  "%")
+    field(PREC, "2")
+    field(HOPR, "100")
+    field(LOPR, "0")
+    field(MDEL, "1")
+    field(ADEL, "5")
+}
+
+# Slow scan (10 s): silence between updates is NORMAL here, so staleness must not be declared
+# after a couple of seconds.
+record(calc, "$(P)ai:slow") {
+    field(DESC, "slow scan 10 s")
+    field(SCAN, "10 second")
+    field(INPA, "$(P)tick NPP")
+    field(CALC, "20+5*SIN(A*PI/180)")
+    field(EGU,  "m3/h")
+    field(PREC, "2")
+    field(HOPR, "30")
+    field(LOPR, "10")
+}
+
+# Value that is a constant (never changes after the first update): a monitor sends nothing more.
+record(calc, "$(P)ai:constant") {
+    field(DESC, "constant, scan 1 s")
+    field(SCAN, "1 second")
+    field(CALC, "42")
+    field(EGU,  "V")
+    field(PREC, "1")
+}
+
+# ---------------------------------------------------------------------------
+# Test-driven record: the tester sets $(P)sim:level (caput ON THE IOC LAPTOP) to walk through
+# NO_ALARM -> LOW -> LOLO -> back, to check transitions and HYST exactly.
+# ---------------------------------------------------------------------------
+record(ao, "$(P)sim:level") {
+    field(DESC, "manual input for alarm tests")
+    field(VAL,  "50")
+    field(EGU,  "mm")
+    field(PREC, "1")
+    field(HOPR, "100")
+    field(LOPR, "0")
+}
+record(calc, "$(P)ai:manual") {
+    field(DESC, "follows sim:level")
+    field(SCAN, "1 second")
+    field(INPA, "$(P)sim:level NPP")
+    field(CALC, "A")
+    field(EGU,  "mm")
+    field(PREC, "1")
+    field(HOPR, "100")
+    field(LOPR, "0")
+    field(HIHI, "90")
+    field(HIGH, "80")
+    field(LOW,  "20")
+    field(LOLO, "10")
+    field(HHSV, "MAJOR")
+    field(HSV,  "MINOR")
+    field(LSV,  "MINOR")
+    field(LLSV, "MAJOR")
+    field(HYST, "3")
+}
+
+# ---------------------------------------------------------------------------
+# Invalid data.
+#  ai:undefined  never processed -> UDF alarm, severity INVALID, until someone writes it.
+#  ai:badlink    input link to a record that does not exist -> LINK alarm, INVALID.
+# ---------------------------------------------------------------------------
+record(ai, "$(P)ai:undefined") {
+    field(DESC, "never processed (UDF)")
+    field(SCAN, "Passive")
+    field(EGU,  "psi")
+}
+record(ai, "$(P)ai:badlink") {
+    field(DESC, "broken input link")
+    field(SCAN, "1 second")
+    field(INP,  "$(P)does:not:exist NPP")
+    field(EGU,  "psi")
+}
+
+# ---------------------------------------------------------------------------
+# Binary records. The alarm representation of bi/mbbi is NOT assumed by the application;
+# these records make the IOC's behaviour observable.
+#   bi:run_ok    ON is normal                      (ZSV=MAJOR: OFF raises a MAJOR alarm)
+#   bi:trip      ON is abnormal                    (OSV=MAJOR)
+#   bi:cos       any change raises a MINOR alarm   (COSV=MINOR)
+# ---------------------------------------------------------------------------
+record(calc, "$(P)bin:src_run") {
+    field(SCAN, "1 second")
+    field(INPA, "$(P)tick NPP")
+    field(CALC, "A<300")
+}
+record(bi, "$(P)bi:run_ok") {
+    field(DESC, "running; OFF is the alarm")
+    field(SCAN, "1 second")
+    field(INP,  "$(P)bin:src_run NPP")
+    field(ZNAM, "STOPPED")
+    field(ONAM, "RUNNING")
+    field(ZSV,  "MAJOR")
+    field(OSV,  "NO_ALARM")
+}
+record(calc, "$(P)bin:src_trip") {
+    field(SCAN, "1 second")
+    field(INPA, "$(P)tick NPP")
+    field(CALC, "A>=240&&A<300")
+}
+record(bi, "$(P)bi:trip") {
+    field(DESC, "trip; ON is the alarm")
+    field(SCAN, "1 second")
+    field(INP,  "$(P)bin:src_trip NPP")
+    field(ZNAM, "OK")
+    field(ONAM, "TRIPPED")
+    field(ZSV,  "NO_ALARM")
+    field(OSV,  "MAJOR")
+}
+record(bi, "$(P)bi:cos") {
+    field(DESC, "change-of-state alarm")
+    field(SCAN, "1 second")
+    field(INP,  "$(P)bin:src_run NPP")
+    field(ZNAM, "CLOSED")
+    field(ONAM, "OPEN")
+    field(COSV, "MINOR")
+}
+
+# Multi-state (enum) record: 4 states derived from the counter.
+record(calc, "$(P)bin:src_mode") {
+    field(SCAN, "1 second")
+    field(INPA, "$(P)tick NPP")
+    field(CALC, "FLOOR(A/90)")
+}
+record(mbbi, "$(P)mbbi:mode") {
+    field(DESC, "4-state mode")
+    field(SCAN, "1 second")
+    field(INP,  "$(P)bin:src_mode NPP")
+    field(NOBT, "2")
+    field(ZRVL, "0")
+    field(ONVL, "1")
+    field(TWVL, "2")
+    field(THVL, "3")
+    field(ZRST, "OFF")
+    field(ONST, "STANDBY")
+    field(TWST, "RUN")
+    field(THST, "FAULT")
+    field(THSV, "MAJOR")
+    field(TWSV, "NO_ALARM")
+}

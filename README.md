@@ -97,3 +97,8 @@ instead:
 - **Simulators started by `plc_service.ps1` disappear:** read `logs\<PLC name>.err`. Starting the script
   from a normal PowerShell window rather than a tool-launched shell avoids processes being cleaned up
   with the parent.
+
+## v2: EPICS test IOC
+
+For the PLC_Monitoring v2 (EPICS Channel Access) there are test IOC databases and a 3000-record
+generator in [`ioc/`](ioc/README.md). The Modbus simulator above remains as the v1 reference.
