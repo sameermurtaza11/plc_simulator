@@ -12,6 +12,11 @@ of the real IOC are **unverified**; these files only make the adapter's behaviou
 | `db/test_small.db` | About 20 hand-written records, each chosen to exercise one case: all four limits, HIGH only, no limits, fast scan with `MDEL`, slow scan (silence is normal), a constant, a manually driven record, `UDF` and broken-link (INVALID) records, `bi` with each severity setting, change-of-state alarm, `mbbi`. |
 | `generate_db.py` | Generates `generated/load_<N>.db` (default 3000 records), the matching `load_<N>_pvs.csv` (inventory to import into the monitoring app) and `load_<N>_expected.json` (units, ranges, limits and severities the IOC was configured with, for comparison against what the adapter reads). Deterministic per `--seed`. |
 | `generated/` | Output of the generator (git-ignored). |
+| `db/hvac_test.db` | The HVAC database supplied for the end-to-end test (25 records, AHU1/AHU2). Source of truth for the HVAC PV inventory. |
+| `db/hvac_sim_support.db` | Simulator heartbeat, scenario echo and a "simulator alive" alarm (optional, test only). |
+| `hvac_sim/`, `tests/` | The HVAC process simulator that writes values into the IOC over Channel Access, and its tests. |
+| `db/coal_plant.db`, `coal_sim/`, `COAL_PLANT.md` | A 1000-PV coal power plant (one 300 MW unit) and its simulator: every PV fed at a random 0.25 to 5 s that changes over time. How to run it: `COAL_PLANT.md`. |
+| `HVAC_IOC_LAPTOP.md` | What to run on the IOC laptop for the HVAC end-to-end test. |
 
 ## Start the IOC (on the test laptop)
 

@@ -1,0 +1,42 @@
+# hvac_sim_support.db — records for the HVAC simulator's own health. Load together with hvac_test.db:
+#
+#   softIoc -d hvac_test.db -d hvac_sim_support.db
+#
+# Why: the HVAC records are plain soft-channel records, so when the simulator stops they simply keep their
+# last value and stay "connected" forever. A heartbeat the simulator writes every update, and a check in
+# the IOC that notices when it stops, make a dead simulator visible as a native EPICS alarm.
+# Test environment only; the production IOC has real I/O and does not need this file.
+
+record(ao, "HVAC:SIM:Heartbeat") {
+    field(DESC, "counter written by the simulator")
+    field(PREC, "0")
+    field(VAL, "0")
+}
+
+record(stringout, "HVAC:SIM:Scenario") {
+    field(DESC, "active simulator scenario")
+    field(VAL, "(simulator not started)")
+}
+
+# Remembers the heartbeat value seen at the previous check.
+record(calc, "HVAC:SIM:HbSeen") {
+    field(DESC, "heartbeat at previous check")
+    field(INPA, "HVAC:SIM:Heartbeat NPP")
+    field(CALC, "A")
+}
+
+# 1 = the heartbeat moved since the last check (simulator alive), 0 = it did not. Checked every 5 s.
+# MAJOR alarm (LOLO) when 0, so a stopped simulator raises a native alarm.
+record(calc, "HVAC:SIM:SimulatorAlive") {
+    field(DESC, "1 = simulator running")
+    field(SCAN, "5 second")
+    field(INPA, "HVAC:SIM:Heartbeat NPP")
+    field(INPB, "HVAC:SIM:HbSeen NPP")
+    field(CALC, "A!=B")
+    field(FLNK, "HVAC:SIM:HbSeen")
+    field(LOLO, "0.5")
+    field(LLSV, "MAJOR")
+    field(LOPR, "0")
+    field(HOPR, "1")
+    field(PREC, "0")
+}
